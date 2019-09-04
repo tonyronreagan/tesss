@@ -1,0 +1,1877 @@
+this chapter, you will learn the following recipes:
+ff Testing event dispatches
+ff Testing the handling of dispatched events
+ff Testing the handling of external events
+ff Testing the handling of callbacks
+ff Testing events using Protractor
+Introduction
+As your AngularJS applications grow in size, you'll inevitably separate the code into multiple
+modules. A great reference to guide you on the modularity of an AngularJS application can be
+found at https://github.com/johnpapa/angularjs-styleguide#modularity. To
+help facilitate the communication between modules without sharing the scope, you can use
+events. The event concept in AngularJS, however, is not as intelligible as we would hope and
+therefore testing can sometimes become overly complex when it need not be.
+I recommend that you read the following excellent article at http://
+toddmotto.com/all-about-angulars-emit-broadcast-onpublish-
+subscribing to help you gain a deeper understanding of
+Angular's event system.
+This chapter will try and lift the veil on some of the techniques behind testing events and
+hopefully provide some fundamentals for your future application development.
+6
+Using Spies to Test Events
+98
+Testing event dispatches
+Broadcasting events in AngularJS are dispatched down the $scope hierarchy as opposed to
+$emit dispatching it upwards. Regardless of direction, we need to test whether an event was
+actually dispatched and for this chapter we will favor the $broadcast method (https://
+docs.angularjs.org/api/ng/type/$rootScope.Scope#$broadcast). The
+$broadcast method requires a name and one or more optional arguments, which will be
+passed on to all the event listeners.
+This recipe will show you how to test broadcasting events from an AngularJS controller using
+Jasmine spies (http://jasmine.github.io/2.0/introduction.html#section-
+Spies). The core goal initially is to determine whether a specific method broadcasts an
+event. We then go into further depth to analyze whether the correct data is broadcasted. It's
+important to understand here that we are not testing AngularJS logic such as testing whether
+the $broadcast method functions as we would expect, rather than testing whether the event
+is dispatched at our specified prompt with the correct name and data.
+Getting ready…
+For this recipe, you simply need logic that broadcasts an event, such as within a controller.
+As an example, here is the code to get you started with testing in this recipe, which basically
+defines a method on the scope that we can call from within our test. The method dispatches
+an event named showWuEmcee using the $broadcast method. A string from the scope
+method argument is also dispatched as a single argument for the event:
+var HomeCtrl = function($scope) {
+$scope.showWuEmcee = function(emceeName) {
+$scope.$broadcast('showWuEmcee', emceeName);
+};
+};
+How to do it…
+1. Create a variable for scope and another for an array of string values to use within
+the test:
+var scope;
+var wuTangClan = ['RZA', 'GZA', 'Method Man', 'Raekwon',
+'Ghostface Killah', 'Inspectah Deck', 'U-God', 'Masta
+Killa', 'Cappadonna', 'ODB'];
+2. Next, ensure that you load your module:
+beforeEach(module('chapter6'));
+Chapter 6
+99
+3. Write a beforeEach function to inject the necessary dependencies and create a
+new scope instance:
+beforeEach(inject(function ($rootScope, $controller) {
+scope = $rootScope.$new();
+}));
+4. Within the beforeEach function from step 3, register a new instance of a controller
+named HomeCtrl providing the scope object created in step 3:
+beforeEach(inject(function ($rootScope, $controller) {
+scope = $rootScope.$new();
+$controller('HomeCtrl', {
+$scope: scope
+});
+}));
+5. Within the beforeEach function again, create a new spy on the scope object and
+stub the $broadcast method:
+beforeEach(inject(function ($rootScope, $controller) {
+scope = $rootScope.$new();
+$controller('HomeCtrl', {
+$scope: scope
+});
+spyOn(scope, '$broadcast');
+}));
+6. Next, create a test to establish that our spy was called:
+it('should call $broadcast', function() {});
+7. Within the test created in step 6, call the showWuEmcee method on scope that
+should broadcast an event:
+scope.showWuEmcee();
+8. Finally, add an expectation that the $broadcast spy was called:
+expect(scope.$broadcast).toHaveBeenCalled();
+How it works…
+A super simple way to determine whether an event was broadcasted at a defined moment
+is accomplished using Jasmine spies. In step 5, we created a spy to stub the $broadcast
+method on scope. Jasmine proxies the object to allow expectations to be made on its invoked
+methods. In step 7, we call the showWuEmcee method that should broadcast our event. In
+step 8, we create an expectation that uses the toHaveBeenCalled matcher that returns
+true if the spy was called.
+Using Spies to Test Events
+100
+There's more…
+Testing whether the event was broadcasted is the groundwork we can build on to delve deeper
+and test broadcasting further:
+1. Let's test whether the event was dispatched with the correct name and argument
+using the toHaveBeenCalledWith matcher. This returns true if the argument list
+matches any of the recorded calls to the spy:
+it('should call $broadcast with correct event name and emcee',
+function() {
+scope.showWuEmcee(wuTangClan[0]);
+expect(scope.$broadcast).toHaveBeenCalledWith('showWuEmcee',
+wuTangClan[0]);
+});
+2. Next, let's use the calls property (http://jasmine.github.io/2.0/
+introduction.html#section-Other_tracking_properties) and test
+whether first argument contains the first item in the array created in step 1 of this
+recipe:
+it('should call $broadcast with specific argument', function() {
+scope.showWuEmcee(wuTangClan[0]);
+expect(scope.$broadcast.calls.argsFor(0)).toContain(wuTangC
+lan[0]);
+});
+See also…
+ff The Testing the handling of dispatched events recipe
+Testing the handling of dispatched events
+After dispatching an event, we can safely surmise that there is a function out there
+somewhere listening for and responding to it. To listen for events in AngularJS, we use the
+$on method and supply it with the name of the event it should listen out for and an event
+handler function.
+This recipe guides you on how to test the handling of a dispatched event and ensures that
+the necessary processes that our handler performs are executed as expected. Just to clarify,
+we are not checking AngularJS's specific logic where a broadcasted (or emitted) event calls a
+listener; we are testing whether the handler function we stipulate responds as we envisaged
+and successively runs the expected logic.
+Chapter 6
+101
+Getting ready…
+For this recipe, you will need an example of broadcasting an event, for example within a
+controller and an associated listener. As an example, we build on the example shown in the
+Getting ready section of the Testing event dispatches recipe and add a listener and function
+to call when the event is dispatched. Obviously, dispatching and listening for an event in the
+same controller is not the brightest of ideas but it serves well for demonstration purposes:
+ff The dispatched event we listen for using the $on method is showWuEmcee.
+ff Our handler function is a method on $scope named onShowWuEmcee.
+ff Within the onShowWuEmcee method, we assign different values to the $scope
+property wuWho based on whether the value supplied is undefined or not:
+var HomeCtrl = function($scope) {
+$scope.UNKNOWN_NAME = 'Unknown emcee';
+$scope.showWuEmcee = function(emceeName) {
+$scope.$broadcast('showWuEmcee', emceeName);
+};
+$scope.onShowWuEmcee = function(e, emceeName) {
+if (!emceeName) {
+$scope.wuWho = $scope.UNKNOWN_NAME;
+return;
+}
+$scope.wuWho = emceeName;
+}
+$scope.$on('showWuEmcee', $scope.onShowWuEmcee);
+};
+How to do it…
+1. First, create a variable for scope and another for an array of string values to use
+within the test:
+var scope;
+var wuTangClan = ['RZA', 'GZA', 'Method Man', 'Raekwon',
+'Ghostface Killah', 'Inspectah Deck', 'U-God', 'Masta Killa',
+'Cappadonna', 'ODB'];
+2. Next, ensure that you load your module:
+beforeEach(module('chapter6'));
+3. Write a beforeEach function to inject the necessary dependencies and create a
+new scope instance:
+beforeEach(inject(function ($rootScope, $controller) {
+scope = $rootScope.$new();
+}));
+Using Spies to Test Events
+102
+4. Next, within the beforeEach function from step 3, register a new instance of a
+controller named HomeCtrl providing the scope object created in step 3:
+$controller('HomeCtrl', {
+$scope: scope
+});
+5. Create a test to establish that the value assigned to scope is equal to the provided
+emceeName object:
+it('should assign correct emcee to scope', function() {});
+6. Next, within the test created in step 5, broadcast the showWuEmcee event and a
+value from our test array created in step 1:
+scope.$broadcast('showWuEmcee', wuTangClan[1]);
+7. Finally, add an expectation that the scope.wuWho value is equal to the value
+provided in step 6:
+expect(scope.wuWho).toEqual(wuTangClan[1]);
+How it works…
+In step 6, we broadcast an event with the name showWuEmcee along with a single argument,
+which is a value from our test array created in step 1. Step 7 raises an expectation that
+scope.wuWho is equal to the value we broadcasted, wuTangClan[1].
+There's more…
+In the preceding steps, we tested one area of logic from our example function; that scope
+updates to the value provided by the broadcasted event. Let's now test the logic that a default
+value gets assigned to scope if the broadcasted event does not provide any data, that is
+emceeName is undefined.
+1. First, create a test to establish that a default value is assigned to the scope if the
+emceeName is undefined:
+it('should assign default emcee to scope if emceeName
+undefined ', function() {});
+2. Within the test created in step 1, broadcast the showWuEmcee event:
+scope.$broadcast('showWuEmcee');
+3. Next, add an expectation that the scope.wuWho value is equal to scope.NO_NAME
+(a default value):
+expect(scope.wuWho).toEqual(scope.NO_NAME);
+Chapter 6
+103
+See also…
+ff The Testing event dispatches recipe
+Testing the handling of external events
+AngularJS provides a multitude of useful directives that enable us to simply handle events,
+however, not all DOM events are nicely wrapped into directives for us. Additionally, there may
+be third-party or external events that need to be handled.
+AngularJS's jqLite provides us with a method to make it straightforward to attach to a DOM
+element and handle events that it dispatches. This wondrous method is known simply
+as on() (http://api.jquery.com/on/) and is accessible on AngularJS elements
+(https://docs.angularjs.org/api/ng/function/angular.element). The on()
+method accepts a string naming the event type and a handler function.
+Be aware of the jqLite limitations of the on() method. It does not support
+namespaces, selectors, or eventData functions.
+This recipe will demonstrate how to test responding to a DOM event that makes use of the
+on() method.
+Getting ready…
+For this recipe, you'll need to have attached the on() method to an external event and
+updated a scope property within the event handler. Here is the code as an example for testing
+that uses the on() method on the $window service listening for the oncanplay event and
+updating scope.canPlay to true:
+directive('wuTang', function($window) {
+return {
+restrict: 'A',
+link: function(scope, element) {
+scope.canPlay = false;
+angular.element($window).on('oncanplay', function() {
+scope.canPlay = true;
+});
+}
+};
+})
+Using Spies to Test Events
+104
+How to do it…
+1. First, create a variable for scope and another for an AngularJS element:
+var scope;
+var element;
+2. Next, ensure that you load your module:
+beforeEach(module('chapter6'));
+3. Write a beforeEach function to inject the necessary dependencies and create a
+new scope instance:
+beforeEach(inject(function ($rootScope, $compile) {
+scope = $rootScope.$new();
+}));
+4. Next, within the beforeEach function from step 3, add the following code to create
+an AngularJS element providing the attribute directive HTML string:
+element = angular.element('<div wu-tang></div>');
+5. Within the beforeEach function from step 3, compile the element providing our
+scope object:
+$compile(element)(scope);
+6. Within the beforeEach function from step 3, call $digest on scope to simulate the
+scope's life cycle:
+scope.$digest();
+7. Next, create a small helper function that dispatches an event:
+function dispatchEvent(type) {
+var evt = document.createEvent('Event');
+evt.initEvent(type, true, true);
+window.dispatchEvent(evt);
+}
+8. Create a test to establish that the value assigned to the scope is equal to updates
+based on a DOM event:
+it('should respond to an event and update scope',
+function() {});
+9. Now, use the helper function from step 7 to dispatch a oncanplay event:
+dispatchEvent('oncanplay');
+10. Next, add an expectation that the scope.canPlay value is true:
+expect(scope.canPlay).toBeTruthy();
+Chapter 6
+105
+How it works…
+There are only two steps that reproduce the behavior of the window dispatching an
+oncanplay event, which our code should be listening for, and handling. Our little helper
+function in step 7 enables us to easily use the window object to dispatch a custom event. Step
+9 makes use of the helper function to create and dispatch an event of the oncanplay type.
+Step 10 simply tests whether the scope value has been updated to true.
+See also…
+ff The Testing the handling of dispatched events recipe
+Testing the handling of callbacks
+There are many third-party JavaScript components available for integration into your AngularJS
+application. Many will expose some sort of API that may include methods specific to events
+related to the component. An example of such a component is the JW player (http://www.
+jwplayer.com).
+The JW player API has an onReady() method available that expects a callback as an
+argument. I have come across many convoluted approaches to testing this scenario, including
+intricate mocks and complex spies. In this recipe, I will show you how to test the callback
+workflow that components such as JW player provide (hint: it's easier than you might think).
+Getting ready…
+Our primary goal is to test a third-party component that makes use of callbacks. The JW
+player has been chosen for this recipe as it's a popular JS library with an extensive API
+making use of callbacks. It would be great if you have a project that makes use of the JW
+player. However, if you do not have such a project and want to get started with this recipe,
+we can quickly create a factory service (https://docs.angularjs.org/api/auto/
+service/$provide#factory) as shown here. We create a factory named jwplayer
+that follows a rough imitation of how the JW player API can be targeted. The service returns
+a single method called onReady that returns a provided callback:
+factory('jwplayer', function() {
+return function() {
+return {
+onReady: function(callback) {
+return callback;
+}
+}
+};
+})
+Using Spies to Test Events
+106
+Here is a directive called jwplayer that performs the following tasks:
+ff Sets scope.ready initially to false
+ff Instantiates a new instance of our jwplayer service
+ff Provides a callback to the onReady method
+ff Within the callback, updates scope.ready to true:
+directive('jwplayer', function(jwplayer) {
+return {
+restrict: 'EA',
+link: function(scope, element) {
+scope.ready = false;
+jwplayer()
+.onReady(scope.readyHandler);
+scope.readyHandler = function() {
+scope.ready = true;
+}
+}
+};
+})
+How to do it…
+1. First, create a variable for the scope and another for element:
+var scope;
+var element
+2. Next, ensure that you load your module:
+beforeEach(module('chapter6'));
+3. Write a beforeEach function to inject the necessary dependencies and create a
+new scope instance:
+beforeEach(inject(function ($rootScope, $compile) {
+scope = $rootScope.$new();
+}));
+4. Within the beforeEach function from step 3, add the following code to create an
+AngularJS element providing the directive HTML string:
+element = angular.element('<jwplayer></ jwplayer>');
+Chapter 6
+107
+5. Within the beforeEach function from step 3, compile the element providing our
+scope object:
+$compile(element)(scope);
+6. Next, within the beforeEach function from step 3, call $digest on the scope to
+simulate the scope's life cycle:
+scope.$digest();
+7. Create a test to establish that the value assigned to the scope is updated:
+it('should update scope within callback', function() {});
+8. Next, call the readyHandler() method on the scope:
+scope.readyHandler();
+9. Add an expectation that the scope.playing function is true:
+expect(scope.ready).toBeTruthy();
+How it works…
+The key to testing callbacks, such as this JW player example, is predictably not the test code.
+It's how we approach the application code itself using a scope property for the callback
+handler. This simple approach enables us to isolate the handler and facilitate testing. We
+need not concern ourselves with the JW player, nor its API. We can trigger our callback within
+the test as it's accessible on the scope object and this is exactly what we do in step 8.
+Testing events using Protractor
+To truly feel confident with your event-driven processes, you need to start testing within the
+browser using the trusty Protractor. Protractor will help coax out those potential cross-browser
+inconsistencies we have all grown to love and cherish. This recipe will guide you on testing
+expected distinct UI changes based on interactive events, for example clicking specific
+DOM elements.
+Getting ready…
+For this example, I have a directive that loads an HTML template. The template contains
+a couple of button type input, which on click action, will create a style setting to fill using
+specific colors, for example, ng-click="wuStyle={'fill':'red'}". Ensure that
+you have Protractor installed and running. You also need to make sure that your project is
+running on a local server so that Protractor can load the web page and run the application.
+In this example, I use localhost port 8000, however, you can amend this according to your
+development environment.
+Using Spies to Test Events
+108
+How to do it…
+1. Use the get method to load the page by passing the URL to the local development
+server running our application:
+beforeEach(function () {
+browser.get('http://0.0.0.0:8000/');
+});
+2. Next, create a test stating our intention that the HTML element is displayed first:
+it('should update the wu logo background color following
+click events', function () {});
+3. Select the logo using the ID as the selector:
+var logo = $('#logo');
+4. Add an expectation that the logo background initial fill is black:
+expect(logo.getCssValue('fill')).toBe('rgb(0, 0, 0)');
+5. Using the by.css() selector, find the input with a value of red and call the
+click() method:
+element(by.css('input[value=red]')).click();
+6. Next, add an expectation that the logo background fill is now red:
+expect(logo.getCssValue('fill')).toBe('rgb(255, 0, 0)');
+7. Using the by.css() selector, find the input with a value of blue and call the
+click() method:
+element(by.css('input[value=blue]')).click();
+8. Next, add an expectation that the logo background fill is now blue:
+expect(logo.getCssValue('fill')).toBe('rgb(0, 0, 255)');
+How it works…
+In steps 3 and 6, we use the jQuery attribute equals selector (http://api.jquery.com/
+attribute-equals-selector/) providing the attribute value of ng-show and an additional
+CSS selector specific to the div tag we are targeting. Before we test our logic to hide the
+element, we first ensure that it is displayed, which is demonstrated in step 4. Once we confirm
+that it is actually displayed, we trigger the click event (http://api.jquery.com/click/)
+on the button element in step 7.
+See also…
+ff The Installing Protractor recipe in Chapter 1, Setup and Configuration
+
+
+
+Service and Factory
+Testing with Mocks
+and Spies
+In this chapter, you will learn the following recipes:
+ff Getting started with testing a service
+ff Testing HTTP GET requests using $httpBackend
+ff Testing HTTP POST requests using $httpBackend
+ff Using spies to test HTTP GET requests
+ff Using spies to test HTTP POST requests
+ff Testing service data using mock helpers
+ff Testing rejected $http promises
+ff Testing constants
+ff Using Protractor to test HTTP requests
+Service and Factory Testing with Mocks and Spies
+120
+Introduction
+Services (https://docs.angularjs.org/guide/services) are typically used to
+assemble and transmit data throughout your application. They may be used to compute values
+or form a communication channel with external resources, requesting data and dispatching
+the responses back into the application. Services are singleton objects and are relatively easy
+to test due to their segregation from core application logic. AngularJS is a popular choice when
+developing client-side applications that are rich in data. These applications are not concerned
+with storing large record sets of data and are commonly known to query RESTful APIs for data
+(http://en.wikipedia.org/wiki/Representational_state_transfer). Whether
+you're using a value, factory, or a service (further clarification on the definitions for these
+can be found at http://stackoverflow.com/a/15666049), you'll find that testing of
+computed data is covered elsewhere in this book.
+In this chapter, we will primarily concentrate on testing services that generate HTTP requests
+using the $http service (https://docs.angularjs.org/api/ng/service/$http).
+This chapter will demonstrate various approaches to testing the $http service, both with
+spies and the $httpBackend service (https://docs.angularjs.org/api/ngMock/
+service/$httpBackend). As you work through this chapter (and the book) you'll begin to
+notice repetition in the test specs. The API for Jasmine is not vast and there are repeated
+patterns to configure AngularJS within your test suite. This will become even more evident in
+this chapter as you work through each recipe, requiring only minor tweaks in implementation
+to resolve test expectations.
+This chapter will use the $httpBackend service to test GET and POST requests. Services,
+as with many other aspects of AngularJS applications, can be approached in a variety of ways
+based on developers' preferences and coding techniques. The majority of recipes in this
+chapter concentrate on the testing of the request within a service and try to avoid focusing
+too much on how the request is invoked. We will test rejected promises, a constant service,
+and how to extend Jasmine to mock data facilitating reuse throughout test specs. This chapter
+focuses on GET and POST requests; once you've nailed the specifics for these methods,
+testing various other methods will be a cinch.
+Getting started with testing a service
+In this recipe, we'll simply test a service that exposes an API method as expected. Then,
+throughout the rest of this chapter, we will build on this foundation to start testing logic
+within the actual service itself.
+Chapter 8
+121
+Getting ready
+All that is required for this recipe is a straightforward service with a method, which we will
+verify is defined. For this recipe, I have a service named emcees and a method named
+getUKEmcees:
+.service('emcees', function() {
+return {
+getUKEmcees: function() {}
+};
+});
+Also, ensure that you've loaded your module:
+beforeEach(module('chapter8'));
+How to do it…
+Follow these steps to determine whether a service API method named getUKEmcees
+is defined:
+1. First, create a variable for the service we are testing:
+var emcees;
+2. Next, write a beforeEach function to inject the $injector service and retrieve
+our service, assigning it to the variable created in step 1:
+beforeEach(inject(function($injector) {
+emcees = $injector.get('emcees');
+}));
+3. Now, create a test to demonstrate that our service is accessible and exposes a
+method:
+it('should have a method defined', function() {});
+4. Finally, within the test created in step 3, add an expectation that the getUKEmcees
+service method is defined:
+expect(emcees.getUKEmcees).toBeDefined();
+How it works…
+Using the $injector service's get method in step 2, we inject our emcees service and
+assign it to a variable for reuse throughout the rest of the spec. In step 4, we simply provide
+the expect function with a reference to the getUKEmcees method expecting it to be defined
+in our emcees service. This is a modest example that serves as a basis to start testing the API
+that your service exposes.
+Service and Factory Testing with Mocks and Spies
+122
+See also
+ff The Testing HTTP GET requests using $httpBackend recipe
+ff The Testing HTTP POST requests using $httpBackend recipe
+ff The Using spies to test HTTP GET requests recipe
+ff The Using spies to test HTTP POST requests recipe
+ff The Testing service data using mock helpers recipe
+ff The Testing rejected $http promises recipe
+Testing HTTP GET requests using
+$httpBackend
+This recipe will demonstrate how to use the $httpBackend service to test whether an HTTP
+GET request is made when a method exposed by a service is invoked. You'll learn how to inject
+and use the $httpBackend service to return custom responses from a GET request. This
+serves as a basis that you can expand on to test how your services handle different types of
+data responses.
+Getting ready
+For this recipe, a service is required with a method exposed that, when called, makes an HTTP
+GET request. For this recipe, I use an example service named emcees and a method named
+getUKEmcees. The service makes use of the $http service's get() method (https://
+docs.angularjs.org/api/ng/service/$http#get) that returns a promise with two
+methods specific to $http: success and error, as shown in the following code:
+.service('emcees', function($http) {
+return {
+getUKEmcees: function() {
+return $http.get('/emcees/uk');
+}
+};
+});
+Also, ensure that you've loaded your module; consider the following example:
+beforeEach(module('chapter8'));
+Chapter 8
+123
+How to do it…
+Follow these steps to test whether our service makes the HTTP GET request:
+1. Create three variables, one for the service we are testing, another for the
+$httpBackend service, and the last for a reference to a URL that we will use
+throughout the recipe:
+var emcees;
+var $httpBackend;
+var url;
+2. Next, write a beforeEach function to inject the $injector, and retrieve and assign
+our services to the variables created in step 1. Also, define a URL to test the service:
+beforeEach(inject(function($injector) {
+emcees = $injector.get('emcees');
+$httpBackend = $injector.get('$httpBackend');
+url = '/emcees/uk';
+}));
+3. Next, within the beforeEach function in step 2, use the $httpBackend service to
+respond to HTTP GET with some mock data:
+$httpBackend.when('GET', url).respond({
+data: ['kamanchi-sly', 'el-eye', 'rola']
+});
+4. Write an afterEach function calling the relevant methods to verify that all HTTP
+requests were made and there are none to be flushed:
+afterEach(function() {
+$httpBackend.verifyNoOutstandingExpectation();
+$httpBackend.verifyNoOutstandingRequest();
+});
+5. Create a test such that our service makes a GET request:
+it('should make a GET request', function() {});
+6. Create a new request expectation for a GET request providing the URL we defined in
+step 2:
+$httpBackend.expectGET(url);
+7. Next, call the getUKEmcees method on our service:
+emcees.getUKEmcees();
+8. Finally, flush all pending requests:
+$httpBackend.flush();
+Service and Factory Testing with Mocks and Spies
+124
+How it works…
+In step 3, we specified a backend definition using the when method on the $httpBackend
+service. The when method expects an HTTP method as its first argument; we provide a value
+of GET and then the URL defined in step 2 as the method's second argument. The when
+method returns an object with a respond method allowing us to control how to handle the
+matched request. Finally, in step 3, we respond with some mock data to replace what we
+would expect from a real server response.
+In step 4, the afterEach function verifies that all HTTP requests were made and there
+are none to be flushed. This is a great additional coverage to ensure that stipulated HTTP
+expectations are fulfilled and will fail tests accordingly. The expectGET method in step 6
+creates a new request expectation for GET requests. We provide the URL defined in step 2 and
+the expectation will return true if the URL matches the current definition.
+Step 8 is the final key move where we make use of the flush method, a pitfall newcomers
+to AngularJS can encounter. This wondrous method enables us to have the best of both the
+asynchronous and synchronous worlds by explicitly flushing pending requests.
+See also
+ff The Getting started with testing a service recipe in this chapter
+ff The Testing HTTP POST requests using $httpBackend recipe in this chapter
+ff The Using spies to test HTTP GET requests recipe
+ff The Using spies to test HTTP POST requests recipe
+ff The Testing service data using mock helpers recipe
+ff The Test rejected $http promises recipe
+Testing HTTP POST requests using
+$httpBackend
+This recipe will demonstrate how to use $httpBackend to test whether an HTTP POST
+request is made when a method exposed by a service is invoked. You will learn how to create
+a new backend definition for a POST request validating that the correct URL and POST data is
+passed to the service method and mock a response.
+Chapter 8
+125
+Getting ready
+For this recipe, a service is required with a method exposed that, when called, makes an
+HTTP POST request. Here, I use an example service named emcees and a method named
+addUKEmcee:
+.service('emcees', function($http) {
+return {
+addUKEmcee: function(emcee) {
+return $http.post('/emcees/uk', emcee);
+}
+};
+});
+Also, ensure that you've loaded your module; consider the following example:
+beforeEach(module('chapter8'));
+How to do it…
+1. First, create three variables, one for the service we are testing, another for the
+$httpBackend service, and the last for a reference to a URL that we will use
+throughout the recipe:
+var emcees;
+var $httpBackend;
+var url;
+2. Next, write a beforeEach function to inject the $injector service, retrieve and
+assign our services to the variables created in step 1. Also, define a URL to test
+the service:
+beforeEach(inject(function ($injector) {
+emcees = $injector.get('emcees');
+$httpBackend = $injector.get('$httpBackend');
+url = '/emcees/uk';
+}));
+3. Write an afterEach function calling the relevant methods to verify that all HTTP
+requests were made and there are none to be flushed:
+afterEach(function() {
+$httpBackend.verifyNoOutstandingExpectation();
+$httpBackend.verifyNoOutstandingRequest();
+});
+Service and Factory Testing with Mocks and Spies
+126
+4. Create a test such that our service makes a POST request:
+it('should make a POST request', function() {});
+5. Create a dummy object to be sent as part of the POST request:
+var emcee = {
+'name': 'ids'
+};
+6. Next, create a new backend definition for a POST request with a simple response of a
+201 HTTP status:
+$httpBackend.expectPOST(url, emcee).respond(201, '');
+7. Call the addUKEmcee method on our service providing the emcee object from step 5:
+emcees.addUKEmcee(emcee);
+8. Finally, flush all pending requests:
+$httpBackend.flush();
+How it works…
+The Testing HTTP GET requests using $httpBackend recipe in this chapter explains some of
+the fundamental logic involved in using the mock HTTP backend implantation. When testing
+a POST as opposed to a GET request, we also need to provide data in the request message's
+body, data that we mock in step 5.
+In step 6, we use the mock data as the second argument when we create a new backend
+definition for the POST request. We respond with an HTTP status code of 201 (http://www.
+w3.org/Protocols/rfc2616/rfc2616-sec10.html) to replace what we would expect
+from a real server response. The expectation will return true if both the URL and the
+data matches.
+See also
+ff The Getting started with testing a service recipe in this chapter
+ff The Testing HTTP GET requests using $httpBackend recipe in this chapter
+ff The Using spies to test HTTP GET requests recipe in this chapter
+ff The Using spies to test HTTP POST requests recipe in this chapter
+ff The Testing service data using mock helpers recipe in this chapter
+ff The Testing rejected $http promises recipe in this chapter
+Chapter 8
+127
+Using spies to test HTTP GET requests
+We have made great use of spies throughout this book, and the fun continues while testing
+services. Spies serve as a great way to easily test HTTP requests, and using spies to test
+services also maintains consistency in your overall application testing.
+The aim of this recipe is to demonstrate how to mock the $http service and test whether
+a GET method was made with a spy.
+Getting ready
+For this recipe, a service is required with a method exposed that, when called, makes an
+HTTP GET request. Here, I use an example service named emcees and a method named
+getUKEmcees:
+.service('emcees', function($http) {
+return {
+getUKEmcees: function() {
+return $http.get('/emcees/uk');
+}
+};
+});
+Also, ensure that you've loaded your module, for example:
+beforeEach(module('chapter8'));
+How to do it…
+Follow the following steps to test whether a GET request is made using spies:
+1. Create a variable for the service we are testing:
+var emcees;
+var httpMock;
+2. Next, write a beforeEach function to load our mock module and inject the
+$provide service in an initialization function:
+beforeEach(module('cookbook', function($provide) {}));
+3. Within the initialization function, create a new spy object providing the $http service
+as the object name to mock and the get method that will be created as a spy:
+httpMock = jasmine.createSpyObj('$http', ['get']);
+Service and Factory Testing with Mocks and Spies
+128
+4. Next, use the $provide service to register our newly created spy object with the
+$http service:
+$provide.value('$http', httpMock);
+5. Write a beforeEach function to inject the $injector service and retrieve our
+service, assigning it to the variable created in step 1:
+beforeEach(inject(function($injector) {
+emcees = $injector.get('emcees');
+}));
+6. Next, create a test such that our service makes a GET request:
+it('should make a GET request', function() {});
+7. Call the getUKEmcees method on our service:
+emcees.getUKEmcees();
+8. Finally, create an expectation so that our spy GET method is called:
+expect(httpMock.get).toHaveBeenCalled();
+How it works…
+The overall aim is to mock the $http service, entirely replacing the dependency on
+making an actual request. In step 3, the $http service mock is created using the Jasmine
+createSpyObj object and we then use the $provide service to register it with the injector
+in step 4.
+To spy on a method on the mock object, we pass an array to createSpyObj with the name of
+the method, for example GET. In step 7, we call our getUKEmcees method on our service on
+which we expect to make a GET request. Step 8 confirms that this in an expectation asserting
+that our $http service mock had its GET method called.
+There's more…
+We can be more explicit about this request and ensure that the correct URL was requested.
+The following example uses the toHaveBeenCalledWith matcher that will return true if
+the argument provided to the get() method matches our expected URL /emcees/uk:
+expect(httpMock.get).toHaveBeenCalledWith('/emcees/uk');
+See also
+ff The Getting started with testing a service recipe in this chapter
+ff The Testing HTTP GET requests using $httpBackend recipe in this chapter
+Chapter 8
+129
+ff The Testing HTTP POST requests using $httpBackend recipe in this chapter
+ff The Using spies to test HTTP POST requests recipe in this chapter
+ff The Testing service data using mock helpers recipe in this chapter
+ff The Testing rejected $http promises recipe in this chapter
+ff The Mocking injected instances using spies recipe in Chapter 2, Getting Started with
+Testing and AngularJS
+Using spies to test HTTP POST requests
+You will notice that spies are incredibly diverse and the simplicity of their implementation
+makes them a favorable choice when testing services. In this recipe, I will show you how to
+mock an $http service and test whether a POST method was made using a spy. You will
+also learn how to confirm that the data supplied is correct for the POST request using the
+toHaveBeenCalledWith method.
+Getting ready
+For this recipe, a service is required with a method exposed that, when called, makes an
+HTTP POST request. Here, I use an example service named emcees and a method named
+addUKEmcee:
+.service('emcees', function($http) {
+return {
+addUKEmcee: function(emcee) {
+return $http.post('/emcees/uk', emcee);
+}
+};
+});
+Also, ensure that you've loaded your module, for example:
+beforeEach(module('chapter8'));
+How to do it…
+1. Create three variables, one for the service we are testing, another for the HTTP mock,
+and the last for a reference to a URL that we will use throughout the recipe
+var emcees;
+var httpMock;
+var url;
+Service and Factory Testing with Mocks and Spies
+130
+2. Next, write a beforeEach function to load our mock module and inject the
+$provide service in an initialization function:
+beforeEach(module('cookbook', function($provide) {}));
+3. Now, within the initialization function, create a new spy object providing the $http
+service as the object name to mock and the GET method that will be created as a spy:
+httpMock = jasmine.createSpyObj('$http', ['post']);
+4. Use the $provide service to register our newly created spy object with the $http
+service:
+$provide.value('$http', httpMock);
+5. Write a beforeEach function to inject the $injector service and retrieve and
+assign our services to the variables created in step 1. Also, define a URL to test the
+service:
+beforeEach(inject(function ($injector) {
+emcees = $injector.get('emcees');
+url = '/emcees/uk';
+}));
+6. Next, create a test such that our service makes a POST request:
+it('should make a POST request', function() {});
+7. Create a dummy object to be sent as part of the POST request:
+var emcee = {
+'name': 'alkaline'
+};
+8. Call the addUKEmcee method on our service providing the emcee object from step 5:
+emcees.addUKEmcee(emcee);
+9. Finally, create an expectation so that our spy post method is called:
+expect(httpMock.post).toHaveBeenCalled();
+How it works…
+We mock the $http service in step 3 using the Jasmine createSpyObj method and spy on
+the post method. In step 4, we use the $provide service to register it with the injector. The
+data supplied to the POST request is created in, and sent as an argument for our service
+addUKEmcee method. Finally, in step 8, we confirm that our $http service mock had its
+POST method called.
+Chapter 8
+131
+There's more…
+In this recipe, we supply an object to our service method, which is then sent as part of the
+POST request. Here, you will see how to confirm that the data supplied to the POST request is
+as expected:
+1. Create a test such that our service makes a POST request with the correct data:
+it('should make a POST request with correct data',
+function() {});
+2. Next, create a dummy object to be sent as part of the POST request:
+var emcee = {
+'name': 'tlp'
+};
+3. Next, call the addUKEmcee method on our service providing the emcee object from
+step 5 in the preceding recipe:
+emcees.addUKEmcee(emcee);
+4. Finally, create an expectation that our spy POST method was called with the expected
+URL and emcee data:
+expect(httpMock.post).toHaveBeenCalledWith(url, emcee);
+Now that you know how to test the data sent in a request, you can modify and adapt this for
+services that transform data prior to a request.
+See also
+ff The Getting started with testing a service recipe in this chapter
+ff The Testing HTTP GET requests using $httpBackend recipe in this chapter
+ff The Using spies to test HTTP GET requests recipe in this chapter
+ff The Testing service data using mock helpers recipe in this chapter
+ff The Testing rejected $http promises recipe in this chapter
+ff The Mocking injected instances using an object recipe in Chapter 2, Getting Started
+with Testing and AngularJS
+ff The Mocking injected instances using spies recipe in Chapter 2, Getting Started with
+Testing and AngularJS
+Service and Factory Testing with Mocks and Spies
+132
+Testing service data using mock helpers
+The Using spies to test HTTP POST requests recipe uses a mock data object to be sent along
+with the POST request. However, it's quite feasible that your application may repeatedly use
+specific objects in different locations, for example, sending within HTTP requests, or using as
+mock responses, and so on.
+This can result in you mocking out the same (or similar) objects in multiple test files. There
+are different approaches that you can take to overcome this issue. In this recipe, you will see
+how to DRY (http://en.wikipedia.org/wiki/Don%27t_repeat_yourself) up some
+of your test code in the Getting ready section and then how to use this mock data in a test.
+In this recipe, you will also learn how to resolve a promise returned by the $http service,
+ensuring that the response data is set on our service object.
+Getting ready
+1. First, a service is required with a method exposed that, when called, makes an
+HTTP GET request. For this recipe, I use an example service named emcees and a
+method named getUKEmcee that requests an emcee using an id paramter. The GET
+response is then assigned to a property named emcee on the emcees service API:
+.service('emcees', function($http) {
+return {
+emcee: {},
+getUKEmcee: function(id) {
+var that = this;
+return $http.get('/emcees/uk/' + id)
+.then(function(response) {
+that.emcee = response;
+});
+}
+};
+});
+2. Next, let's create our mock data file that we will use within this recipe test:
+ First, create a file named mockData.js in the same directory as your test
+specs
+ Next, within the file, add a new property to the Jasmine object named
+mockData:
+jasmine.mockData = (typeof jasmine.mockData ===
+'undefined') ? {} : jasmine.mockData;
+Chapter 8
+133
+ Now, add a method named emcee to the mockdata object that returns
+some fake data that we will use in our test:
+jasmine.mockData.emcee = function() {
+return {
+"name": "Spye",
+"crew": "Undivided Attention",
+"label": "Hairy Parents"
+};
+};
+3. Ensure that you've loaded your module, for example:
+beforeEach(module('chapter8'));
+How to do it…
+1. Create variables that will be used throughout this test:
+var emcees;
+var httpMock;
+var $q;
+var $scope;
+2. Next, write a beforeEach function to load our mock module and inject the
+$provide service in an initialization function:
+beforeEach(module('cookbook', function($provide) {}));
+3. Within the initialization function, create a new spy object providing the $http service
+as the object name to mock and the get method that will be created as a spy:
+httpMock = jasmine.createSpyObj('$http', ['get']);
+4. Next, use the $provide service to register our newly created spy object with the
+$http service:
+$provide.value('$http', httpMock);
+5. Now, write a beforeEach function to inject the $injector service and retrieve
+our service, assigning it to the variable created in step 1. Also, within this function,
+retrieve references to the $q service and create a new $scope object:
+beforeEach(inject(function ($injector) {
+emcees = $injector.get('emcees');
+$q = $injector.get('$q');
+$scope = $injector.get('$rootScope').$new();
+}));
+Service and Factory Testing with Mocks and Spies
+134
+6. Create a test to demonstrate that our service is accessible and exposes a method:
+it('should store the response from the HTTP GET request',
+function() {});
+7. Create a reference to the promise instance by calling defer on the $q service:
+var defer = $q.defer();
+8. Next, create a local variable populated using the emcee method on the mockData
+object:
+var emcee = jasmine.mockData.emcee();
+9. Resolve our promise with the mock data from step 8:
+defer.resolve(emcee);
+10. Using the spy that we created in step 3, chain the spy with and.returnValue to
+return the promise instance:
+httpMock.get.and.returnValue(defer.promise);
+11. Next, call the getUKEmcee method on our service providing a value:
+emcees.getUKEmcee('1');
+12. Use $scope.$digest to process all the watchers:
+$scope.$digest();
+13. Finally, within the test created in step 6, add an expectation that the emcee object
+stored in our emcees service returns a value matching our mock data from step 8:
+expect(emcees.emcee.name).toBe(emcee.name);
+How it works…
+Please refer to the Using spies to test HTTP GET requests recipe in this chapter, which
+explains the spy-related logic within this recipe. We started off with this recipe's Getting ready
+section by creating our mock data. In step 8, you can see how easily we reference that data
+using the global Jasmine object. The $http service returns a promise, and on a successful
+response, assigns the data to an object in our service.
+We need that promise to resolve, which involves first grabbing a reference to the promise
+instance in step 7 and then resolving it with the mock data in step 9. In step 10, we stipulate
+that our spy method should return a specific value, which is our promise.
+After progressing through calling our service and ensuring all watchers are processed in steps
+11 and 12, we can then match the mock response against the service object data.
+Chapter 8
+135
+See also
+ff The Getting started with testing a service recipe in this chapter
+ff The Testing HTTP GET requests using $httpBackend recipe in this chapter
+ff The Testing HTTP POST requests using $httpBackend recipe in this chapter
+ff The Using spies to test HTTP GET requests recipe in this chapter
+ff The Using spies to test HTTP POST requests recipe in this chapter
+ff The Testing rejected $http promises recipe in this chapter
+ff The Mocking injected instances using spies recipe in Chapter 2, Getting Started with
+Testing and AngularJS
+Testing rejected $http promises
+In this recipe, we will address the unfortunate occurrence of an HTTP request returning an
+error. AngularJS uses promises (https://docs.angularjs.org/api/ng/service/$q),
+which offer a single point to handle errors that may arise from an HTTP request. The promise
+error handler, based on your application preference, can handle the error accordingly.
+For example, you may want to dispatch an event with the error message or throw an actual
+JavaScript Error (https://developer.mozilla.org/en-US/docs/Web/JavaScript/
+Reference/Global_Objects/Error) that your application consumes and handles. For
+this recipe, I will choose the latter and reject a promise and then throw an error. We'll write a
+test to ensure that an error is thrown when our HTTP GET request is rejected.
+Getting ready
+A service is required with a method exposed that, when called, makes an HTTP GET request.
+For this recipe, I use an example service named emcees and a method named getUKEmcee
+that requests an emcee using an id value. Using the catch method on the promise API,
+we pass the error provided by the callback to throw an error:
+.service('emcees', function($http) {
+return {
+getUKEmcee: function(id) {
+return $http.get('/emcees/uk/' + id)
+.catch(function(error) {
+throw Error(error);
+});
+}
+};
+});
+Service and Factory Testing with Mocks and Spies
+136
+Ensure that you've loaded your module, for example:
+beforeEach(module('chapter8'));
+How to do it…
+1. First, create a variable for the service we are testing:
+var emcees;
+var httpMock;
+var $q;
+var $scope;
+2. Next, write a beforeEach function to load our mock module and inject the
+$provide service in an initialization function:
+beforeEach(module('cookbook', function($provide) {}));
+3. Within the initialization function, create a new spy object providing the $http service
+as the object name to mock and the get method that will be created as a spy:
+httpMock = jasmine.createSpyObj('$http', ['get']);
+4. Next, use the $provide service to register our newly created spy object with the
+$http service:
+$provide.value('$http', httpMock);
+5. Now, write a beforeEach function to inject the $injector service and retrieve
+our service, assigning it to the variable created in step 1. Also, within this function,
+retrieve references to the $q service and create a new $scope object:
+beforeEach(inject(function ($injector) {
+emcees = $injector.get('emcees');
+$q = $injector.get('$q');
+$scope = $injector.get('$rootScope').$new();
+}));
+6. Create a test to demonstrate that our service is accessible and exposes a method:
+it('should throw an error', function() {});
+7. Create a reference to the promise instance by calling defer on the $q service:
+var defer = $q.defer();
+8. Create an error message string:
+var errorMsg = 'Unauthorized';
+9. Now, reject our promise with the error message from step 8:
+defer.reject(errorMsg);
+Chapter 8
+137
+10. Using the spy we created in step 3, chain the spy with and.returnValue to return
+the promise instance:
+httpMock.get.and.returnValue(defer.promise);
+11. Next, provide an anonymous function as a value for the expect function and use the
+toThrowError matcher expecting our error message:
+expect(function() {}).toThrowError(errorMsg);
+12. Call the getUKEmcee method on our service providing a value:
+emcees.getUKEmcee('1');
+13. Finally, use $scope.$digest to process all the watchers:
+$scope.$digest();
+How it works…
+Please refer to the Using spies to test HTTP GET requests recipe, which explains the spyrelated
+logic within this recipe. In step 7, we grab a reference to the promise that we reject
+in step 9 providing an error message defined in step 8. To test throwing errors using the
+toThrowError method from Jasmine, we need to provide the expect function with an
+anonymous function as seen in step 11. In steps 12 and 13, we add to the function and call
+our service method and ensure that all watchers are processed.
+There's more…
+If throwing an error within a catch handler in your application is not your preference, you can
+remove the catch() method in your service and then update the function we used in the
+recipe, as follows:
+it('should catch a failure', function() {
+var errorMsg = 'Unauthorized';
+var defer = $q.defer();
+defer.reject(errorMsg);
+httpMock.get.and.returnValue(defer.promise);
+emcees.getUKEmcee('1').catch(function(error) {
+expect(error).toEqual(errorMsg);
+})
+$scope.$digest();
+});
+We now add the expectation to the catch method in our test and compare the error message
+that the promise returns to match our expected message.
+Service and Factory Testing with Mocks and Spies
+138
+See also
+ff The Getting started with testing a service recipe in this chapter
+ff The Testing HTTP GET requests using $httpBackend recipe in this chapter
+ff The Using spies to test HTTP GET requests recipe in this chapter
+ff The Using spies to test HTTP POST requests recipe in this chapter
+ff The Testing service data using mock helpers recipe in this chapter
+Testing constants
+This recipe is a quick and easy overview of how to test a constant service (https://
+docs.angularjs.org/api/auto/service/$provide#constant). Constants can
+be useful for a variety of reasons, ranging from defining responsive breakpoints, global
+strings for notifications/errors, or access keys to libraries such as https://keen.io.
+If you're interested in environment-based constants for configuration of your AngularJS
+application, ensure that you read my blog post at http://newtriks.com/2013/11/29/
+environment-specific-configuration-in-angularjs-using-grunt/, which
+makes use of a Yeoman generator I wrote called env-config. This recipe will show you how
+to test whether a constant has been defined and then take it further by testing whether it
+returns an object with a correct string value.
+Getting ready
+For this recipe, a constant service is required. As an example, here is what I use to test
+in this recipe, which defines a constant named MESSAGES and exposes an object with
+a property named errors. The value of emcees is an object containing properties with
+error string values:
+.constant('MESSAGES', {
+'errors': {
+'ukemcees': 'There was an error loading emcees based in good old
+blighty.'
+}
+});
+Ensure that you've loaded your module, for example:
+beforeEach(module('chapter8'));
+Chapter 8
+139
+How to do it…
+1. First, create a variable for the service we are testing:
+var MESSAGES;
+2. Next, write a beforeEach function to inject the MESSAGES service and retrieve our
+service, assigning it to the variable created in step 1:
+beforeEach(inject(function (_MESSAGES_) {
+MESSAGES = _MESSAGES_;
+}));
+3. Now, create a test to demonstrate that our service is accessible and exposes
+a method:
+it('should have a MESSAGES constant object', function()
+{});
+4. Finally, within the test created in step 3, add an expectation that the service method
+getUKEmcees is defined:
+expect(MESSAGES).toBeDefined();
+How it works…
+We first need to inject our constant service in step 2. The final step is easy; we match against
+the service being defined.
+There's more…
+We will take this recipe a little further and actually test whether a constant value is as we
+would expect. I will be completely honest and state that I can not justify one hundred percent
+the necessity to test constant values, but here we go:
+1. Create a test to demonstrate that our service is accessible and exposes a method:
+it('should have correct errors.http.ukemcees constant',
+function() {});
+2. Next, create a message that should match our constant string value:
+var message = 'There was an error loading emcees based in
+good old blighty.';
+3. Finally, retrieve the value of ukemcees and match it against the message variable
+from step 2:
+expect(MESSAGES.errors.ukemcees).toBe(message);
+Service and Factory Testing with Mocks and Spies
+140
+See also
+ff The Getting started with testing a service recipe in this chapter
+Using Protractor to test HTTP requests
+In this recipe, we will use Protractor to test the broader spectrum of events related to an HTTP
+request and ensure that our application UI updates are as expected. The school of thought I
+follow is that end-to-end tests should reflect the application in the closest state possible to its
+running in the production environment. This helps identify potential problems between client
+and server communication, which can be obscured using HTTP mocks.
+I have known end-to-end tests to actually highlight a problem with the server API before
+any other potential source. If, however, you do not, or cannot, test against an actual server
+for HTTP requests, then AngularJS provides a fake backend implementation at https://
+docs.angularjs.org/api/ngMockE2E/service/$httpBackend, plus there are
+other modules that can be used to set up mocks for HTTP calls (https://github.com/
+atecarlos/protractor-http-mock).
+For this recipe, we will use a fantastic fake online REST API called JSONPlaceholder
+(http://jsonplaceholder.typicode.com). You can also run JSONPlaceholder
+locally using npm (https://www.npmjs.com/package/jsonplaceholder); please refer
+to the main website for instructions on how to do this.
+Getting ready
+In this example, you need to have a button that, when clicked, will make an HTTP request
+and assign the response data as a collection on scope. In the HTML, the collection should
+be displayed using the ng-repeat directive (https://docs.angularjs.org/api/ng/
+directive/ngRepeat).
+Here are the steps for the example code I use for this recipe's end-to-end testing:
+1. In your HTML, add a button that calls a function on scope, and also a repeater as
+well:
+<body ng-controller="HomeCtrl">
+<button ng-click="onLoadUsers()" ngshow="!
+users.length">Load Users</button>
+<div ng-repeat="user in users">
+<span>{{user.name}}</span>
+</div>
+</body>
+Chapter 8
+141
+2. Create a controller that defines a handler for the button click and calls a service to
+request users:
+var HomeCtrl = function($scope, users) {
+$scope.onLoadUsers = function() {
+users.getUsers().then(function(response) {
+$scope.users = response.data;
+});
+};
+};
+3. Create a service that makes a request to an API and returns suitable data to populate
+the repeater:
+.service('users', function($http) {
+return {
+getUsers: function() {
+return
+$http.get('http://jsonplaceholder.typicode.com/users');
+}
+};
+})
+Ensure that you have Protractor installed and running and if you need guidance on setting up
+Protractor, please read the Installing Protractor recipe in Chapter 1, Setup and Configuration.
+Please update your URL and port based on your configuration.
+How to do it…
+1. Firstly, use the get method to load the page by passing the URL to the local
+development server running our application:
+beforeEach(function () {
+browser.get('http://0.0.0.0:8000/');
+});
+2. Next, create a test stating our intention that the HTML displays users and hides the
+button to load users:
+it('should do display users and hide the load users
+button on success', function (){});
+3. Find the load users button by text using the buttonText method:
+var button = element(by.buttonText('Load Users'));
+4. Now, click on the button to load the users:
+button.click();
+Service and Factory Testing with Mocks and Spies
+142
+5. Find the element inside the ng-repeat directive using by.repeater:
+var firstUsername = element(by.repeater('user in users')
+.row(0).column('{{user.name}}'));
+6. Next, add an expectation that the first element that displays the username is defined:
+expect(firstUsername).toBeDefined();
+7. Finally, add an expectation that the button is not displayed:
+expect(button.isDisplayed()).toBeFalsy();
+How it works…
+In step 3, we use the buttonText locator (http://angular.github.io/
+protractor/#/api?view=ProtractorBy.prototype.buttonText) to find the filter
+button. In step 4, we click the button (http://angular.github.io/protractor/#/
+api?view=webdriver.WebElement.prototype.click), and this calls a handler to
+make the service request for users. We should expect at this point that we have a collection
+of users and our repeater should display at least one item.
+In step 5, we use the repeater locator (http://angular.github.io/protractor/#/
+api?view=ProtractorBy.prototype.repeater) to find elements inside of an ngrepeat
+directive. The repeater locator API enables us to retrieve a specific row (https://
+github.com/angular/protractor/blob/master/lib/locators.js#L293) and
+column (https://github.com/angular/protractor/blob/master/lib/locators.
+js#L318) that expects a binding. We provide our user.name binding and then run an
+expectation that the element is defined.
+Finally, in step 7, we test whether the element is currently displayed using the isDisplayed
+method (http://angular.github.io/protractor/#/api?view=webdriver.
+WebElement.prototype.isDisplayed).
+See also
+ff The
+
+
+
+Testing User
+Interaction and
+Directives
+In this chapter, we will cover the following recipes:
+ff Starting with testing directives
+ff Setting up templateUrl
+ff Searching elements using selectors
+ff Accessing basic HTML content
+ff Accessing repeater content
+ff Scope changes based on user input
+ff Scope changes based on DOM events
+ff Class changes based on window properties
+ff Directive changes on interaction using Protractor
+Introduction
+Directives are the cornerstone of AngularJS and can range in complexity providing the
+foundation to many aspects of an application. Therefore, directives require comprehensive
+tests to ensure they are interacting with the DOM as intended. This chapter will guide you
+through some of the rudimentary steps required to embark on your journey to test directives.
+The focal point of many of the recipes revolves around targeting specific HTML elements and
+how they respond to interaction. You will learn how to test changes on scope based on a range
+of influences and finally begin addressing testing directives using Protractor.
+Testing User Interaction and Directives
+76
+Starting with testing directives
+Testing a directive involves three key steps that we will address in this recipe to serve as a
+foundation for the duration of this chapter:
+1. Create an element.
+2. Compile the element and link to a scope object.
+3. Simulate the scope life cycle.
+Getting ready
+For this recipe, you simply need a directive that applies a scope value to the element in the
+DOM. For example:
+angular.module('chapter5', [])
+.directive('writers', function() {
+return {
+restrict: 'E',
+link: function(scope, element) {
+element.text('Graffiti artist: ' + scope.artist);
+}
+};
+});
+How to do it…
+1. First, create three variables accessible across all tests:
+ One for the element: var element;
+ One for scope: var scope;
+ One for some dummy data to assign to a scope value: var artist =
+'Amara Por Dios';
+2. Next, ensure that you load your module:
+beforeEach(module('chapter5'));
+3. Create a beforeEach function to inject the necessary dependencies and create a
+new scope instance and assign the artist to a scope:
+beforeEach(inject(function ($rootScope, $compile) {
+scope = $rootScope.$new();
+scope.artist = artist;
+}));
+Chapter 5
+77
+4. Next, within the beforeEach function, add the following code to create an Angular
+element providing the directive HTML string:
+element = angular.element('<writers></writers>');
+5. Compile the element providing our scope object:
+$compile(element)(scope);
+6. Now, call $digest on scope to simulate the scope life cycle:
+scope.$digest();
+7. Finally, to confirm whether these steps work as expected, write a simple test that
+uses the text() method available on the Angular element. The text() method will
+return the text contents of the element, which we then match against our artist value:
+it('should display correct text in the DOM', function() {
+expect(element.text()).toBe('Graffiti artist: ' +
+artist);
+});
+Here is what your code should look like to run the final test:
+var scope;
+var element;
+var artist;
+beforeEach(module('chapter5'));
+beforeEach(function() {
+artist = 'Amara Por Dios';
+});
+beforeEach(inject(function($compile) {
+element = angular.element('<writers></writers>');
+scope.artist = artist;
+$compile(element)(scope);
+scope.$digest();
+}));
+it('should display correct text in the DOM', function() {
+expect(element.text()).toBe('Graffiti artist: ' +
+artist);
+});
+Testing User Interaction and Directives
+78
+How it works…
+In step 4, the directive HTML tag is provided as a string to the angular.element function.
+The angular element function wraps a raw DOM element or an HTML string as a jQuery
+element if jQuery is available; otherwise, it defaults to using Angular's jQuery lite which
+is a subset of jQuery. This wrapper exposes a range of useful jQuery methods to interact
+with the element and its content (for a full list of methods available, visit https://docs.
+angularjs.org/api/ng/function/angular.element).
+In step 6, the element is compiled into a template using the $compile service. The $compile
+service can compile HTML strings into a template and produces a template function. This
+function can then be used to link the scope and the template together. Step 6 demonstrates just
+this, linking the scope object created in step 3. The final step to getting our directive in a testable
+state is in step 7 where we call $digest to simulate the scope life cycle. This is usually part of
+the AngularJS life cycle within the browser and therefore needs to be explicitly called in a testbased
+environment such as this, as opposed to end-to-end tests using Protractor.
+There's more…
+One beforeEach() method containing the logic covered in this recipe can be used as a
+reference to work from for the rest of this chapter:
+beforeEach(inject(function($rootScope, $compile) {
+// Create scope
+scope = $rootScope.$new();
+// Replace with the appropriate HTML string
+element = angular.element('<deejay></deejay>');
+// Replace with test scope data
+scope.deejay = deejay;
+// Compile
+$compile(element)(scope);
+// Digest
+scope.$digest();
+}));
+See also
+ff The Setting up templateUrl recipe
+ff The Searching elements using selectors recipe
+ff The Accessing basic HTML content recipe
+ff The Accessing repeater content recipe
+ff The Scope changes based on user input recipe
+Chapter 5
+79
+ff The Scope changes based on DOM events recipe
+ff The Class changes based on window properties recipe
+Setting up templateUrl
+It's fairly common to separate the template content into an HTML file that can then be
+requested on demand when the directive is invoked using the templateUrl property.
+However, when testing directives that make use of the templateUrl property, we need
+to load and preprocess the HTML files to AngularJS templates. Luckily, the AngularJS team
+preempted our dilemma and provided a solution using Karma and the karma-ng-html2jspreprocessor
+plugin. This recipe will show you how to use Karma to enable us to test a
+directive that uses the templateUrl property.
+Getting ready
+For this recipe, you will need to ensure the following:
+1. You installed Karma by following the Installing Karma recipe in Chapter 1, Setup and
+Configuration.
+2. You installed the karma-ng-html2js-preprocessor plugin by following the
+instructions at https://github.com/karma-runner/karma-ng-html2jspreprocessor/
+blob/master/README.md#installation.
+3. You configured the karma-ng-html2js-preprocessor plugin by following the
+instructions at https://github.com/karma-runner/karma-ng-html2jspreprocessor/
+blob/master/README.md#configuration.
+4. Finally, you'll need a directive that loads an HTML file using templateUrl and
+for this example, we apply a scope value to the element in the DOM. Consider the
+following example:
+angular.module('chapter5', [])
+.directive('emcees', function() {
+return {
+restrict: 'E',
+templateUrl: 'template.html',
+link: function(scope, element) {
+scope.emcee = scope.emcees[0];
+}
+};
+})
+Testing User Interaction and Directives
+80
+An example template could be as simple as what we will use for this example
+(template.html):
+<h1>{{emcee}}</h1>
+How to do it…
+1. First, create three variables accessible across all tests:
+ One for the element: var element;
+ One for the scope: var scope;
+ One for some dummy data to assign to a scope value: var
+emcees = ['Roxanne Shante', 'Mc Lyte'];
+2. Next, ensure that you load your module:
+beforeEach(module('chapter5'));
+3. We also need to load the actual template. We can do this by simply appending the
+filename to the beforeEach function we just created in step 2:
+beforeEach(module('chapter5', 'template.html'));
+4. Next, create a beforeEach function to inject the necessary dependencies and
+create a new scope instance and assign the artist to a scope:
+beforeEach(inject(function ($rootScope, $compile) {
+scope = $rootScope.$new();
+Scope.emcees = emcees;
+}));
+5. Within the beforeEach function, add the following code to create an Angular
+element providing the directive HTML string:
+element = angular.element('<emcees></emcees>');
+6. Compile the element providing our scope object:
+$compile(element)(scope);
+7. Call $digest on scope to simulate the scope life cycle:
+scope.$digest();
+8. Next, create a basic test to establish that the text contained within the h1 tag is what
+we expect:
+it('should set the scope property id to the correct initial
+value', function () {});
+Chapter 5
+81
+9. Now, retrieve a reference to the h1 tag using the find() method on the element
+providing the tag name as the selector:
+var h1 = element.find('h1');
+10. Finally, add the expectation that the h1 tag text matches our first emcee from the
+array we provided in step 4:
+expect(h1.text()).toBe(emcees[0]);
+11. You will see the following passing test within your console window:
+How it works…
+The karma-ng-html2js-preprocessor plugin works by converting HTML files into JS
+strings and generates AngularJS modules that we load in step 3. Once loaded, AngularJS
+makes these modules available by putting the HTML files into the $templateCache. There
+are libraries available to help incorporate this into your project build process, for example
+using Grunt or Gulp. There is a popular example specifically for Gulp at https://github.
+com/miickel/gulp-angular-templatecache. Now that the template is available, we
+can access the HTML content using the compiled element we created in step 5.
+In this recipe, we access the text content of the element using the find() method. Be aware
+that if using the smaller jQuery lite subset of jQuery, there are certain limitations compared
+to the full-blown jQuery version. The find() method in particular is limited to look up by tag
+name only. To read more about the find() method, visit the jQuery API documentation at
+http://api.jquery.com/find.
+See also
+ff The Starting with testing directives recipe
+Testing User Interaction and Directives
+82
+Searching elements using selectors
+Directives, as you should know, attach special behavior to a DOM element. When AngularJS
+compiles and returns the element on which the directive is applied, it is wrapped by either
+jqLite or jQuery. This exposes an API on the element, offering many useful methods to query
+the element and its contents. In this recipe, you will learn how to use these methods to
+retrieve elements using selectors.
+Getting ready
+Follow the logic to define a beforeEach() function with the relevant logic to set up a
+directive as outlined in the Starting with testing directives recipe in this chapter. For this
+recipe, you can replicate the template that I suggested in the first recipe's There's more…
+section. For the purpose of this recipe, I tested against a property on scope named deejay:
+var deejay = {
+name: 'Shortee',
+style: 'turntablism'
+};
+You can replace this with whatever code you have within the directive you're testing.
+How to do it…
+1. First, create a basic test to establish that the HTML code contained within an
+h2 tag is as we expected:
+it('should return an element using find()', function ()
+{});
+2. Next, retrieve a reference to the h2 tag using the find() method on the element
+providing the tag name as the selector:
+var h2 = element.find('h2');
+3. Finally, we create an expectation that the element is actually defined:
+expect(h2[0]).toBeDefined();
+Chapter 5
+83
+How it works…
+In step 2, we use the find() method with the h2 selector to test against in step 3's
+expectation. Remember, the element returned is wrapped by jqLite or jQuery. Therefore,
+even if the element is not found, the object returned will have jQuery-specific properties; this
+means that we cannot run an expectation on the element alone being defined. A simple way
+to determine if the element itself is indeed defined is to access it via jQuery's internal array
+of DOM objects, typically the first. So, this is why in our recipe we run an expectation against
+element[0] as opposed to element itself.
+There's more…
+ff Here is an example using the querySelector() method. The querySelector()
+method is available on the actual DOM so we need to access it on an actual HTML
+element and not the jQuery wrapped element. The following code shows the selector
+we use in a CSS selector:
+it('should return an element using querySelector and css
+selector', function() {
+var elementByClass = element[0].querySelector('.deejaystyle');
+expect(elementByClass).toBeDefined();
+});
+ff Here is a another example using the querySelector() method that uses an id
+selector:
+it(should return an element using querySelector and id selector',
+function() {
+var elementByClass = element[0].querySelector(' #deejay_name');
+expect(elementByClass).toBeDefined();
+});
+You can read more about the querySelector() method at https://
+developer.mozilla.org/en-
+US/docs/Web/API/document.querySelector.
+See also
+ff The Starting with testing directives recipe
+ff The Accessing basic HTML content recipe
+Testing User Interaction and Directives
+84
+Accessing basic HTML content
+A substantial number of directive tests will involve interacting with the HTML content within
+the rendered HTML template. This recipe will teach you how to test whether a directive's
+HTML content is as expected.
+Getting ready
+Follow the logic to define a beforeEach() function with the relevant logic to set up a directive
+as outlined in the Starting with testing directives recipe in this chapter. For this recipe, you
+can replicate the template that I suggested in the first recipe's There's more… section. For the
+purpose of this recipe, I will test against a property on a scope named deejay:
+var deejay = {
+name: 'Shortee',
+style: 'turntablism'
+};
+You can replace this with whatever code you have within the directive you're testing.
+How to do it…
+1. First, create a basic test to establish that the HTML code contained within a h2 tag is
+as we expected:
+it('should display correct deejay data in the DOM',
+function () {});
+2. Next, retrieve a reference to the h2 tag using the find() method on the element
+providing the tag name as the selector:
+var h2 = element.find('h2');
+3. Finally, using the html() method on the returned element from step 2, we can get
+the HTML contents within an expectation that the h2 tag HTML code matches our
+scope's deejay name:
+expect(h2.html()).toBe(deejay.name);
+How it works…
+We made heavy use of the jQuery (or jqLite) library methods available for our element. In step
+2, we use the find() method with the h2 selector. This returns a match for us to further
+utilize in step 3, in our expectation where we access the HTML contents of the element using
+the html() method this time (http://api.jquery.com/html/).
+Chapter 5
+85
+There's more…
+We could also run a similar expectation for text within our h2 element using the text()
+method (http://api.jquery.com/text/) on the element, for example:
+it('should retrieve text from <h2>', function() {
+var h2 = element.find('h2');
+expect(h2.text()).toBe(deejay.name);
+});
+See also
+ff The Starting with testing directives recipe
+ff The Searching elements using selectors recipe
+Accessing repeater content
+AngularJS facilitates generating repeated content with ease using the ngRepeat directive. In
+this recipe, we'll learn how to access and test repeated content.
+Getting ready
+Follow the logic to define a beforeEach() function with the relevant logic to set up a directive
+as outlined in the Starting with testing directives recipe in this chapter. For this recipe, you
+can replicate the template that I suggested in the first recipe's There's more… section. For the
+purpose of this recipe, I tested against a property on scope named breakers:
+var breakers = [{
+name: 'China Doll'
+}, {
+name: 'Crazy Legs'
+}, {
+name: 'Frosty Freeze'
+}];
+You can replace this with whatever code you have within the directive you're testing.
+How to do it…
+1. First, create a basic test to establish that the HTML code contained within the h2 tag
+is as we expected:
+it('should display the correct breaker name', function ()
+{});
+Testing User Interaction and Directives
+86
+2. Next, retrieve a reference to the li tag using the find() method on the element
+providing the tag name as the selector:
+var list = element.find('li');
+3. Finally, targeting the first element in the list, we retrieve the text content expecting
+it to match the first item in the breakers array:
+expect(list.eq(0).text()).toBe('China Doll');
+How it works…
+In step 2, the find() method using li as the selector will return all the list items. In step
+3, using the eq() method (http://api.jquery.com/eq/) on the returned element from
+step 2, we can get the HTML contents at a specific index, zero in this particular case. As the
+returned object from the eq() method is a jQuery object, we can call the text() method,
+which immediately after that will return the text content of the element. We can then run an
+expectation that the first li tag text matches the first breaker within the scope array.
+See also
+ff The Starting with testing directives recipe
+ff The Searching elements using selectors recipe
+ff The Accessing basic HTML content recipe
+Scope changes based on user input
+This recipe will show you how to update the scope using the user's input. There is a slight
+potential overlap in this recipe where it could be interpreted that we are testing AngularJS
+logic, which the AngularJS team would have already comprehensively covered in their test
+suites. However, I would justify this by stating that we are testing a specific element, which
+when interacted with in a particular manner, updates a specific value on the scope. By the
+end of this recipe, you will be familiar with interacting with a directive, updating the content of
+an element, and then triggering an event to update the scope. Finally, we will test whether the
+value on the scope matches what we expected.
+Getting ready
+For this example, I have a simple directive that contains an input field and binds to a key press
+event. If the key pressed is the Enter key, then the value of the input field is added to the array
+of breakers:
+Chapter 5
+87
+directive('breakers', function() {
+return {
+restrict: 'E',
+template: '<input type="text" name="input" value="" ngkeypress="
+onSubmit($event)"><ul><li ng-repeat="breaker
+in breakers">{{breaker.name}}</li></ul>',
+link: function(scope) {
+scope.onSubmit = function(event) {
+if (event.which === 13) {
+var input = event.target;
+scope.breakers.push({name:input.value});
+}
+}
+}
+};
+})
+Follow the logic to define a beforeEach() function with the relevant logic to set up a
+directive as outlined in the Starting with testing directives recipe in this chapter. For this
+recipe, you can replicate the template that I suggested in the first recipe's There's more…
+section. For the purpose of this recipe, I will test against a property on the scope named
+breakers that I will assign an empty array:
+var breakers = [];
+You can replace this with whatever code you have within the directive you're testing.
+How to do it…
+1. First, create a beforeEach() function that will inject the $controller service to
+register a new instance of a controller named HomeCtrl and also provide the scope
+object that we created in the Getting ready section of this recipe:
+beforeEach(inject(function($controller) {
+$controller('HomeCtrl', {
+$scope: scope
+});
+}));
+2. Next, create a basic test that will ensure that the scope was updated as expected:
+it('should update breakers list with defined input value',
+function () {});
+Testing User Interaction and Directives
+88
+3. Next, create a small helper function that returns the first HTML element in the
+directive template:
+function $input() {
+return element.children().eq(0);
+}
+4. Next, use the helper function from step 3 to target the input field and using the
+val() method, set the input value to the first breaker from our array:
+$input().val('China Doll');
+5. Manually trigger our key-press event by calling the onSubmit() method and pass an
+object with the minimal information required to satisfy the handler's requirements:
+// Trigger submit using Enter key
+scope.onSubmit({
+which: 13,
+preventDefault: function() {},
+target: $input()[0]
+});
+6. Finally, run the expectation on the first value's name property on our breakers array
+matching against the value we set in step 4:
+expect(scope.breakers[0].name).toBe('China Doll');
+How it works…
+In step 4, using the power of jqLite (or jQuery), we are able to set the value of the input
+field with the val() method (http://api.jquery.com/val/). At this point, we have
+populated the input and now need to trigger the key-press handler with the relevant data to
+ensure that its value gets pushed on to our array in step 5. Triggering the key-press event is
+as easy as calling the onSubmit() method on scope, yet we need to ensure that we pass the
+information required by the event handler:
+1. The which property: The onSubmit() handler only processes key events triggered
+by the Enter key. We determine the key press using the jQuery which property
+(http://api.jquery.com/event.which/) that normalizes event.keyCode
+and event.charCode. The enter key reports as 13.
+2. The preventDefault property: This is called by the handler in our directive.
+Providing an empty function will suffice to satisfy this dependency.
+3. The target property: This is required so the handler can retrieve the input value.
+4. This now results in a valid event being passed to the scope handler with the required
+data to ensure that a value gets added to the breakers array and therefore ensure
+that the expectation in step 6 passes.
+Chapter 5
+89
+See also
+ff The Starting with testing directives recipe
+ff The Searching elements using selectors recipe
+Scope changes based on DOM events
+Window events are easy to listen and respond to using the bind() method available on an
+element. One such case can be responsive layouts based on window size. In this recipe,
+we will run through how to test changes to scope based on window events, specifically the
+resize event.
+Getting ready
+For this example, I have a simple directive that binds to the $window resize event. On
+resizing, the $window outerWidth parameter is assigned to a scope property:
+directive('writers', function($window) {
+return {
+restrict: 'E',
+link: function(scope, element) {
+function onResize(e) {
+scope.windowWidth = $window.outerWidth;
+scope.$digest();
+}
+angular.element($window).bind('resize',
+onResize);
+}
+};
+});
+Follow the logic to define a beforeEach() function with the relevant logic to set up a directive
+as outlined in the Starting with testing directives recipe in this chapter. For this recipe, you can
+replicate the template that I suggested in the first recipe's There's more… section. You can
+replace this with whatever code you have within the directive you're testing.
+Testing User Interaction and Directives
+90
+How to do it…
+1. First, create a beforeEach() function that will inject the $window service, which
+we assign to a variable:
+var $window;
+beforeEach(inject(function(_$window_) {
+$window = _$window_;
+}));
+2. Next, create a basic test that will ensure that the scope was updated as expected:
+it('should update scope with current window width on window
+resize', function () {});
+3. Using the $window service, call its resizeTo() method by passing in a width and
+height value 100:
+$window.resizeTo(100, 100);
+4. Next, create a small helper function that dispatches an event, for example:
+function dispatchEvent(type) {
+var evt = document.createEvent('Event');
+evt.initEvent(type, true, true);
+$window.dispatchEvent(evt);
+}
+5. Use the helper function from step 4 to dispatch a resize event:
+dispatchEvent('resize');
+6. Finally, run the expectation on the windowWidth scope property matching it against
+our defined window width value of 100 from step 3:
+expect(scope.windowWidth).toBe(100);
+How it works…
+We use the $window service as opposed to the browser's window object for testability. The
+AngularJS $window service allows overriding, mocking, and so on, which for testing, proves
+to be indispensable. In step 3, we call the resizeTo() method on the $window service,
+which does what it says on the tin. In step 4, we define a function that steps through creating
+a custom event that gets dispatched by our $window service. The function expects one
+argument, which is the event type so we can reuse this function in other tests if required. Step
+5 uses the dispatchEvent() method passing resize as the argument. Our directive will
+handle this event and assign the new window width to scope. Step 6 validates this logic for us.
+Chapter 5
+91
+There's more…
+Remember the DRY (http://en.wikipedia.org/wiki/Don't_repeat_yourself)
+principle within your tests. An example within this code is the extraction of the dispatch event
+logic into its own function. Another small improvement we can make to this recipe (and others
+in this book) is to assign values used for testing to variables. This also means that when it
+comes to changing any values, you will have minimized the number of locations that require
+updating. Within this recipe, we can change the width and height values to variables,
+for example:
+var width = 100;
+var height = 100;
+it('should update scope with current window width on window resize',
+function() {
+$window.resizeTo(width, height);
+dispatchEvent('resize');
+expect(scope.windowWidth).toBe(width);
+});
+See also
+ff The Starting with testing directives recipe
+ff The Searching elements using selectors recipe
+Class changes based on window properties
+The ngClass module allows you to dynamically set CSS classes on an HTML element using
+data binding. To do this, an expression is evaluated on each of the classes you wish to add.
+In this recipe, we will test whether a specific class is added to an element based on a
+window property.
+Getting ready
+For this example, I have a small directive that makes use of ngClass to conditionally
+apply a class named popup. The isPopup property on scope determines the condition
+by using the search() method (https://developer.mozilla.org/en-US/docs/
+Web/JavaScript/Reference/Global_Objects/String/search) on the $window.
+name property (https://developer.mozilla.org/en-US/docs/Web/API/Window.
+name). The search() method returns a string index greater than -1 if it matches our regular
+expression for popup on the $window.name object:
+Testing User Interaction and Directives
+92
+directive('deejay', function($window) {
+return {
+restrict: 'E',
+template: '<div class="deejay-booth" ng-class="{popup: isPopup
+=== true}"></div>',
+link: function(scope) {
+scope.isPopup = $window.name.search(/popup/) >= 0;
+}
+};
+})
+Follow the logic to define a beforeEach() function with the relevant logic to set up a directive
+as outlined in the Starting with testing directives recipe in this chapter. For this recipe, you can
+replicate the template that I suggested in the first recipe's There's more… section. You can
+replace this with whatever code you have within the directive you're testing.
+How to do it…
+1. First, create a beforeEach() function that will inject the $window service, which we
+then assign to a variable:
+Var $window;
+beforeEach(inject(function(_$window_) {
+$window = _$window_;
+}));
+2. Next, create a basic test that will ensure that the scope was updated as expected:
+it('should have specific popup class if window name contains
+popup', function () {});
+3. Retrieve a reference to the div class first using the find() method on the element
+providing the div tag name as the selector, and then using the attr() method to
+retrieve CSS classes on the returned element:
+var divClasses = element.find('div').attr('class');
+4. Next, set the $window.name object to the popup value:
+$window.name = 'popup';
+5. Finally, check for the popup value in the divClasses string from step 3:
+expect(divClasses).toContain('popup');
+Chapter 5
+93
+How it works…
+Using the find() method, we can search for the div element. We then use the attr()
+method (http://api.jquery.com/attr/) on the returned div element to get the
+value of the class attribute. This returns a string of all the CSS classes. In step 4, using the
+$window service, we are able to set the name property to our test value. In step 5, we used
+the toContain matcher to search the CSS classes' string for the popup string.
+There's more…
+We can use the split() method (https://developer.mozilla.org/en-US/docs/
+Web/JavaScript/Reference/Global_Objects/String/split) on the string of
+classes providing a regular expression to split the string based on whitespace. This would
+return an array of class names that we could interrogate further in our tests or use the same
+toContain() matcher with the same results:
+expect(divClasses.split(/\s+/g)).toContain('popup');
+See also
+ff The Starting with testing directives recipe
+ff The Searching elements using selectors recipe
+Directive changes on interaction using
+Protractor
+As your directives flourish and begin to direct actions influencing the UI or state, Protractor will
+give you a silent nod to encourage you to step up. In this recipe, the directive logic itself is a
+doddle and the e2e tests are far from elaborate. However, they are a foundation you can build
+on as your directives become more intricate. In this recipe, we will use Protractor to test hiding
+and showing an HTML element based on a user clicking a button.
+Getting ready
+For this example, I have a directive that displays a deejay's information. Within the main
+div is a button that when clicked changes a scope property called showBooth to false. The
+showBooth value is used by the ngShow module, which is an attribute on the main div:
+Testing User Interaction and Directives
+94
+directive('deejay', function($window) {
+return {
+restrict: 'E',
+template: '<div ng-show="showBooth" class="deejaybooth"><
+h2 id="deejay_name">{{deejay.name}}</h2><p
+class="deejay-style">{{deejay.style}}</p><button
+class="hide-btn" ng-click="hideBooth()">Hide
+Booth</button></div>',
+link: function(scope) {
+scope.showBooth = true;
+scope.hideBooth = function() {
+scope.showBooth = false;
+};
+}
+};
+})
+Ensure that you have Protractor installed and running. You also need to make sure that your
+project is running on a local server so that Protractor can load the webpage and run the
+application. In this example, I have used localhost port 8000, however you can amend
+this according to your development environment.
+How to do it…
+1. Firstly, use the get method to load the page by passing the URL to the local
+development server that is running our application:
+beforeEach(function () {
+browser.get('http://0.0.0.0:8000/');
+});
+2. Next, create a test stating our intention that the HTML element is displayed first:
+it('should show content on page load', function () {});
+3. Select the element that has the ngShow attribute:
+Var deejayBooth = $('[ng-show=showBooth].deejay-booth');
+4. Add an expectation that the element we selected is actually displayed:
+expect(deejayBooth.isDisplayed()).toBeTruthy();
+5. Next, create a test stating our intention that the HTML element is not displayed when
+the hide button is clicked:
+it('should hide content on button click', function () {});
+Chapter 5
+95
+6. Within the test from step 5, select the element that has the ngShow attribute:
+Var deejayBooth = $('[ng-show=showBooth].deejay-booth');
+7. Using a jQuery selector, call the click() method on the hide button:
+$('.hide-btn').click();
+8. Now, add an expectation that the element we selected is actually displayed:
+expect(deejayBooth.isDisplayed()).toBeFalsy();
+How it works…
+In step 3 and 6, we use the jQuery attribute equals selector (http://api.jquery.
+com/attribute-equals-selector/) providing the attribute value of ng-show and an
+additional CSS selector specific to the div we are targeting. Before we test our logic to hide
+the element, we first ensure that it is displayed; this is demonstrated in step 4. Once we
+confirm this, it is actually displayed. We trigger the click event (http://api.jquery.com/
+click/) on the button element in step 7.
+See also
+ff The Installing Protractor recipe in Chapter 1, Setup and Configuration
+ff The Searching elements using selectors recipe
+
